@@ -1,0 +1,78 @@
+# ── Dependencies ──────────────────────────────────────────────────────────────
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build output ──────────────────────────────────────────────────────────────
+dist/
+dist-ssr/
+build/
+
+# ── Vite cache ────────────────────────────────────────────────────────────────
+.vite/
+vite.config.js.timestamp-*
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# ── GenLayer / gltest cache ───────────────────────────────────────────────────
+.gltest_cache/
+.genlayer/
+genvm-artifacts/
+
+# ── OS artefacts ──────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ── Editor & IDE ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+coverage/
+.nyc_output/
+.pytest_cache/
+htmlcov/
+*.cover
+.coverage
+.coverage.*
+
+# ── Lock files (keep package-lock, ignore others) ─────────────────────────────
+yarn.lock
+pnpm-lock.yaml

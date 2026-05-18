@@ -1,0 +1,16 @@
+{
+  "name": "ai-detective-game",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "genlayer-js": "latest"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

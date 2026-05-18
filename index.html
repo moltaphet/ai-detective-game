@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Detective — GenLayer</title>
+  <style>
+    /* ── Reset ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Design tokens ──────────────────────────────────────── */
+    :root {
+      --violet:      #a855f7;
+      --violet-lo:   rgba(168,85,247,.12);
+      --violet-dim:  rgba(168,85,247,.35);
+      --pink:        #ec4899;
+      --pink-lo:     rgba(236,72,153,.1);
+      --gold:        #f0a500;
+      --gold-lo:     rgba(240,165,0,.1);
+      --gold-dim:    #7a5300;
+      --green:       #2dd882;
+      --red:         #f04444;
+      --cyan:        #22d3ee;
+      --bg:          #020308;
+      --glass:       rgba(8,10,22,.75);
+      --glass-lite:  rgba(15,18,35,.6);
+      --border:      rgba(168,85,247,.2);
+      --border-hi:   rgba(168,85,247,.45);
+      --text:        #d0d5f0;
+      --text-dim:    #5a6080;
+      --r:           10px;
+      --mono:        "Courier New", Courier, monospace;
+    }
+
+    /* ── Body ───────────────────────────────────────────────── */
+    html { background: var(--bg); }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--mono);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 16px 80px;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated mesh gradient blobs ───────────────────────── */
+    .bg-blob {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(90px);
+      pointer-events: none;
+      z-index: 0;
+    }
+    .bg-blob-1 {
+      width: 55vw; height: 55vw;
+      background: radial-gradient(circle, rgba(168,85,247,.18) 0%, transparent 70%);
+      top: -15vw; left: -10vw;
+      animation: blob1 22s ease-in-out infinite;
+    }
+    .bg-blob-2 {
+      width: 50vw; height: 50vw;
+      background: radial-gradient(circle, rgba(236,72,153,.13) 0%, transparent 70%);
+      bottom: -5vw; right: -8vw;
+      animation: blob2 28s ease-in-out infinite;
+    }
+    .bg-blob-3 {
+      width: 38vw; height: 38vw;
+      background: radial-gradient(circle, rgba(240,165,0,.07) 0%, transparent 70%);
+      top: 45%; left: 45%;
+      transform: translate(-50%,-50%);
+      animation: blob3 18s ease-in-out infinite;
+    }
+    @keyframes blob1 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      33%      { transform: translate(8vw,14vw) scale(1.1); }
+      66%      { transform: translate(-4vw,8vw) scale(.93); }
+    }
+    @keyframes blob2 {
+      0%,100% { transform: translate(0,0) scale(1); }
+      40%      { transform: translate(-12vw,-8vw) scale(1.08); }
+      70%      { transform: translate(4vw,-12vw) scale(1.12); }
+    }
+    @keyframes blob3 {
+      0%,100% { transform: translate(-50%,-50%) scale(1); }
+      50%      { transform: translate(-50%,-50%) scale(1.35); }
+    }
+
+    /* ── Perspective grid ───────────────────────────────────── */
+    .bg-grid {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(168,85,247,.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(168,85,247,.04) 1px, transparent 1px);
+      background-size: 44px 44px;
+      mask-image: radial-gradient(ellipse at 50% 40%, black 10%, transparent 72%);
+    }
+
+    /* ── Scanline overlay ───────────────────────────────────── */
+    body::after {
+      content: "";
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px, transparent 3px,
+        rgba(0,0,0,.06) 3px, rgba(0,0,0,.06) 4px
+      );
+      pointer-events: none; z-index: 999;
+    }
+
+    /* ── Scrollbar ──────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: rgba(8,10,22,.4); }
+    ::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, var(--violet), var(--pink));
+      border-radius: 2px;
+    }
+
+    /* ── All content sits above blobs ───────────────────────── */
+    header, main { position: relative; z-index: 1; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    header {
+      width: 100%; max-width: 820px;
+      display: flex; align-items: center;
+      justify-content: space-between;
+      padding: 30px 0 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 28px; gap: 16px; flex-wrap: wrap;
+    }
+    .brand { display: flex; flex-direction: column; gap: 5px; }
+    .logo {
+      font-size: 1.6rem; font-weight: bold;
+      letter-spacing: .12em;
+      background: linear-gradient(120deg, var(--gold), var(--violet), var(--pink));
+      background-size: 200% 200%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: logoShimmer 6s ease infinite, glitch 12s ease infinite;
+    }
+    @keyframes logoShimmer {
+      0%,100% { background-position: 0% 50%; }
+      50%      { background-position: 100% 50%; }
+    }
+    @keyframes glitch {
+      0%,88%,100% { filter: none; transform: none; }
+      89% { transform: translate(-2px,0); filter: drop-shadow(2px 0 var(--pink)); }
+      90% { transform: translate(2px,0);  filter: drop-shadow(-2px 0 var(--violet)); }
+      91% { transform: none; filter: none; }
+    }
+    .tagline {
+      color: var(--text-dim); font-size: .67rem;
+      letter-spacing: .2em; text-transform: uppercase;
+    }
+
+    .header-right { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    /* ── Social links ───────────────────────────────────────── */
+    .social-links { display: flex; align-items: center; gap: 6px; }
+    .social-link {
+      display: flex; align-items: center; justify-content: center;
+      width: 34px; height: 34px;
+      border: 1px solid var(--border); border-radius: var(--r);
+      background: var(--glass); color: var(--text-dim);
+      text-decoration: none;
+      backdrop-filter: blur(12px);
+      transition: color .2s, border-color .2s, box-shadow .2s;
+    }
+    .social-link:hover {
+      color: var(--violet); border-color: var(--violet-dim);
+      box-shadow: 0 0 14px rgba(168,85,247,.2);
+    }
+    .social-link svg { width: 15px; height: 15px; fill: currentColor; }
+
+    /* ── Network badge ──────────────────────────────────────── */
+    .network-badge {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 13px;
+      border: 1px solid rgba(45,216,130,.28);
+      border-radius: 99px; font-size: .64rem;
+      letter-spacing: .12em; color: var(--green);
+      background: rgba(45,216,130,.06);
+    }
+    .net-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: netPulse 2s ease infinite;
+    }
+    @keyframes netPulse {
+      0%,100% { opacity: 1; }
+      50%      { opacity: .35; }
+    }
+
+    /* ── Wallet button ──────────────────────────────────────── */
+    #wallet-btn {
+      display: flex; align-items: center; gap: 8px;
+      background: var(--glass);
+      border: 1px solid var(--violet-dim);
+      border-radius: var(--r);
+      color: var(--violet); cursor: pointer;
+      font-family: var(--mono); font-size: .78rem;
+      font-weight: bold; letter-spacing: .1em;
+      padding: 10px 20px; text-transform: uppercase;
+      backdrop-filter: blur(16px);
+      transition: border-color .2s, box-shadow .2s, color .2s;
+    }
+    #wallet-btn:hover {
+      border-color: var(--violet);
+      box-shadow: 0 0 18px rgba(168,85,247,.25), inset 0 0 20px rgba(168,85,247,.06);
+    }
+    #wallet-btn.connected { color: var(--text); border-color: var(--border); }
+    #wallet-btn.connected:hover { border-color: rgba(168,85,247,.35); }
+    .wallet-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--text-dim); transition: background .3s, box-shadow .3s;
+      flex-shrink: 0;
+    }
+    #wallet-btn.connected .wallet-dot {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green);
+    }
+
+    /* ── Main ───────────────────────────────────────────────── */
+    main {
+      width: 100%; max-width: 820px;
+      display: flex; flex-direction: column; gap: 20px;
+    }
+
+    /* ── Glass card ─────────────────────────────────────────── */
+    .card {
+      background: var(--glass);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 22px 26px;
+      box-shadow:
+        0 4px 24px rgba(0,0,0,.4),
+        inset 0 1px 0 rgba(255,255,255,.04);
+    }
+    .section-label {
+      font-size: .62rem; letter-spacing: .22em;
+      text-transform: uppercase; color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    /* ── 3D tilt card ───────────────────────────────────────── */
+    .tilt-card {
+      transition: transform .18s ease, box-shadow .18s ease;
+      transform-style: preserve-3d;
+      will-change: transform;
+      position: relative;
+    }
+    /* corner brackets */
+    .tilt-card::before, .tilt-card::after {
+      content: ""; position: absolute;
+      width: 14px; height: 14px;
+      border-color: var(--violet); border-style: solid;
+      pointer-events: none;
+    }
+    .tilt-card::before {
+      top: -1px; left: -1px;
+      border-width: 2px 0 0 2px; border-radius: 2px 0 0 0;
+    }
+    .tilt-card::after {
+      bottom: -1px; right: -1px;
+      border-width: 0 2px 2px 0; border-radius: 0 0 2px 0;
+    }
+
+    /* ── Status board ───────────────────────────────────────── */
+    .status-board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .stat-card {
+      background: rgba(8,10,22,.85);
+      backdrop-filter: blur(16px);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 18px 22px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.3), inset 0 1px 0 rgba(255,255,255,.03);
+    }
+    .stat-value {
+      font-size: 1.7rem; font-weight: bold; line-height: 1.1;
+      background: linear-gradient(135deg, var(--gold), var(--pink));
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .stat-sub { font-size: .67rem; color: var(--text-dim); margin-top: 5px; }
+
+    /* status badges */
+    .status-badge {
+      display: inline-block; padding: 4px 14px;
+      border-radius: 99px; font-size: .72rem;
+      font-weight: bold; letter-spacing: .08em;
+      text-transform: uppercase; margin-top: 10px;
+    }
+    .badge-active {
+      background: rgba(45,216,130,.1); color: var(--green);
+      border: 1px solid rgba(45,216,130,.3);
+      box-shadow: 0 0 10px rgba(45,216,130,.15);
+    }
+    .badge-solved {
+      background: rgba(240,68,68,.1); color: var(--red);
+      border: 1px solid rgba(240,68,68,.3);
+    }
+    .badge-setup {
+      background: var(--violet-lo); color: var(--violet);
+      border: 1px solid var(--violet-dim);
+    }
+    .badge-loading {
+      background: rgba(100,100,130,.1); color: var(--text-dim);
+      border: 1px solid var(--border);
+    }
+
+    /* ── Case dossier ───────────────────────────────────────── */
+    .dossier-header {
+      display: flex; align-items: flex-start;
+      justify-content: space-between; margin-bottom: 14px; gap: 12px;
+    }
+    .case-title {
+      font-size: 1.15rem; font-weight: bold; letter-spacing: .04em;
+      line-height: 1.35;
+      background: linear-gradient(120deg, var(--gold), var(--violet), var(--pink));
+      background-size: 200% 200%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: logoShimmer 8s ease infinite;
+    }
+    .case-description {
+      font-size: .84rem; color: var(--text);
+      line-height: 1.7; margin-top: 10px;
+    }
+    .suspect-tag {
+      display: inline-flex; align-items: center; gap: 7px;
+      margin-top: 14px;
+      background: var(--violet-lo);
+      border: 1px solid var(--violet-dim);
+      border-radius: 99px; padding: 5px 14px;
+      font-size: .74rem; color: var(--violet);
+    }
+    .suspect-tag strong { color: var(--text); font-weight: normal; }
+    .no-case-msg {
+      color: var(--text-dim); font-size: .82rem;
+      letter-spacing: .06em; text-align: center;
+      padding: 16px 0 8px; line-height: 1.9;
+    }
+
+    /* ── New case button ────────────────────────────────────── */
+    #new-case-btn {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--violet-lo);
+      border: 1px solid var(--violet-dim);
+      border-radius: var(--r); color: var(--violet);
+      cursor: pointer; font-family: var(--mono);
+      font-size: .72rem; letter-spacing: .1em;
+      padding: 8px 16px; text-transform: uppercase;
+      transition: background .2s, border-color .2s, box-shadow .2s;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    #new-case-btn:hover:not(:disabled) {
+      background: rgba(168,85,247,.2); border-color: var(--violet);
+      box-shadow: 0 0 14px rgba(168,85,247,.2);
+    }
+    #new-case-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── Log header ─────────────────────────────────────────── */
+    .log-header {
+      display: flex; align-items: center;
+      justify-content: space-between; margin-bottom: 12px;
+    }
+    .btn-ghost {
+      background: none; border: 1px solid var(--border);
+      border-radius: var(--r); color: var(--text-dim); cursor: pointer;
+      font-family: var(--mono); font-size: .7rem;
+      letter-spacing: .08em; padding: 5px 13px;
+      text-transform: uppercase;
+      transition: color .2s, border-color .2s;
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
+
+    /* ── Chat log ────────────────────────────────────────────── */
+    #chat-log {
+      background: rgba(4,5,12,.8);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      height: 360px; overflow-y: auto; overflow-x: hidden;
+      padding: 16px;
+      display: flex; flex-direction: column; gap: 14px;
+      scroll-behavior: smooth;
+      position: relative; /* required: loading screen is position:absolute inside */
+    }
+    .chat-placeholder {
+      margin: auto; text-align: center;
+      color: var(--text-dim); font-size: .78rem;
+      letter-spacing: .07em; line-height: 1.9;
+    }
+
+    /* ── Chat bubbles ────────────────────────────────────────── */
+    .bubble {
+      display: flex; flex-direction: column; gap: 3px;
+      max-width: 86%; animation: fadeUp .28s ease;
+    }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .bubble-detective { align-self: flex-end; }
+    .bubble-suspect   { align-self: flex-start; }
+    .bubble-system    { align-self: center; max-width: 100%; }
+
+    .bubble-role {
+      font-size: .58rem; letter-spacing: .14em;
+      text-transform: uppercase; color: var(--text-dim); padding: 0 4px;
+    }
+    .bubble-detective .bubble-role { text-align: right; }
+
+    .bubble-text { border-radius: var(--r); padding: 10px 14px; font-size: .85rem; line-height: 1.65; }
+
+    .bubble-detective .bubble-text {
+      background: var(--gold-lo);
+      border: 1px solid rgba(240,165,0,.22);
+      color: #e8c97a; border-bottom-right-radius: 2px;
+      box-shadow: 0 2px 12px rgba(240,165,0,.08);
+    }
+    .bubble-suspect .bubble-text {
+      background: var(--glass-lite);
+      border: 1px solid var(--border); color: var(--text);
+      border-bottom-left-radius: 2px;
+      box-shadow: 0 2px 12px rgba(168,85,247,.06);
+    }
+    .bubble-system .bubble-text {
+      font-size: .75rem; color: var(--text-dim);
+      text-align: center; border: none; padding: 2px 0;
+    }
+    .bubble-win .bubble-text {
+      background: linear-gradient(135deg, rgba(240,165,0,.12), rgba(236,72,153,.1));
+      border: 1px solid rgba(240,165,0,.35);
+      color: var(--gold); font-weight: bold;
+      text-align: center; font-size: .88rem;
+      box-shadow: 0 0 20px rgba(240,165,0,.15);
+    }
+    .bubble-err .bubble-text {
+      background: rgba(240,68,68,.07); border: 1px solid rgba(240,68,68,.2);
+      color: var(--red); font-size: .8rem;
+    }
+    .bubble-info .bubble-text {
+      background: var(--violet-lo); border: 1px solid var(--violet-dim);
+      color: var(--violet); font-size: .78rem; text-align: center;
+    }
+
+    /* ── Loading screen ──────────────────────────────────────── */
+    #loading-screen {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 20px; overflow: hidden;
+      background: rgba(4,5,12,.9);
+      border-radius: inherit;
+      z-index: 10;
+    }
+
+    /* scan rings */
+    .load-rings {
+      position: relative;
+      width: 100px; height: 100px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .load-ring {
+      position: absolute; border-radius: 50%;
+      border: 1px solid transparent; animation: ringPulse ease-in-out infinite;
+    }
+    .load-ring.r1 {
+      width: 100px; height: 100px;
+      border-color: rgba(168,85,247,.5);
+      animation-duration: 2s;
+      box-shadow: 0 0 12px rgba(168,85,247,.2), inset 0 0 12px rgba(168,85,247,.1);
+    }
+    .load-ring.r2 {
+      width: 70px; height: 70px;
+      border-color: rgba(236,72,153,.5);
+      animation-duration: 2s; animation-delay: .35s;
+      box-shadow: 0 0 10px rgba(236,72,153,.2);
+    }
+    .load-ring.r3 {
+      width: 42px; height: 42px;
+      border-color: rgba(240,165,0,.6);
+      animation-duration: 2s; animation-delay: .7s;
+      box-shadow: 0 0 8px rgba(240,165,0,.2);
+    }
+    @keyframes ringPulse {
+      0%,100% { transform: scale(1); opacity: .8; }
+      50%      { transform: scale(1.12); opacity: .3; }
+    }
+    .load-icon {
+      position: absolute; font-size: 1.3rem;
+      background: linear-gradient(135deg, var(--gold), var(--violet));
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: iconSpin 8s linear infinite;
+    }
+    @keyframes iconSpin {
+      0%,100% { transform: rotate(0deg) scale(1); }
+      50%      { transform: rotate(180deg) scale(1.1); }
+    }
+
+    /* scanner beam */
+    .scan-beam {
+      position: absolute; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, transparent, var(--violet), var(--pink), var(--violet), transparent);
+      box-shadow: 0 0 16px var(--violet), 0 0 32px var(--pink);
+      animation: scanMove 3.5s cubic-bezier(.4,0,.6,1) infinite;
+    }
+    @keyframes scanMove {
+      0%   { top: 0%;   opacity: 0; }
+      5%   { opacity: 1; }
+      95%  { opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+
+    /* phrase text */
+    .load-phrase {
+      font-size: .82rem; letter-spacing: .1em;
+      color: var(--violet); text-align: center;
+      padding: 0 24px; transition: opacity .3s ease;
+      max-width: 340px; line-height: 1.5;
+    }
+    .load-sublabel {
+      font-size: .64rem; letter-spacing: .15em;
+      color: var(--text-dim); text-transform: uppercase;
+    }
+
+    /* ── Input area ──────────────────────────────────────────── */
+    #question-input {
+      width: 100%; resize: none; height: 76px;
+      background: rgba(4,5,12,.7);
+      border: 1px solid var(--border); border-radius: var(--r);
+      color: var(--text); font-family: var(--mono);
+      font-size: .9rem; padding: 12px 14px; outline: none;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    #question-input:focus {
+      border-color: var(--violet-dim);
+      box-shadow: 0 0 0 2px rgba(168,85,247,.08);
+    }
+    #question-input::placeholder { color: var(--text-dim); }
+
+    /* ── Interrogate button ──────────────────────────────────── */
+    #interrogate-btn {
+      width: 100%; margin-top: 12px; padding: 14px;
+      background: linear-gradient(135deg, rgba(168,85,247,.12), rgba(236,72,153,.1));
+      border: 1px solid var(--violet-dim); border-radius: var(--r);
+      color: var(--violet); cursor: pointer;
+      font-family: var(--mono); font-size: .88rem;
+      font-weight: bold; letter-spacing: .13em; text-transform: uppercase;
+      transition: background .22s, border-color .22s, box-shadow .22s, color .22s;
+    }
+    #interrogate-btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, rgba(168,85,247,.22), rgba(236,72,153,.18));
+      border-color: var(--violet); color: #c084fc;
+      box-shadow: 0 0 24px rgba(168,85,247,.2), inset 0 0 30px rgba(168,85,247,.06);
+    }
+    #interrogate-btn:disabled { opacity: .35; cursor: not-allowed; }
+
+    /* ── Progress bar ────────────────────────────────────────── */
+    #tx-bar-wrap {
+      display: none; margin-top: 12px;
+      background: rgba(4,5,12,.7);
+      border: 1px solid var(--border); border-radius: var(--r);
+      padding: 10px 14px;
+    }
+    #tx-bar-wrap.visible { display: block; }
+    #tx-bar-label {
+      font-size: .68rem; color: var(--text-dim);
+      margin-bottom: 7px; letter-spacing: .08em;
+    }
+    #tx-bar-track {
+      height: 3px; background: var(--border); border-radius: 2px; overflow: hidden;
+    }
+    #tx-bar-fill {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--violet), var(--pink));
+      border-radius: 2px; transition: width .5s ease;
+      box-shadow: 0 0 8px var(--violet);
+    }
+    .hint-text {
+      font-size: .64rem; color: var(--text-dim);
+      margin-top: 8px; text-align: right; letter-spacing: .06em;
+    }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 28px; left: 50%;
+      transform: translateX(-50%) translateY(60px); opacity: 0;
+      background: rgba(10,5,12,.9);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(240,68,68,.35); color: var(--red);
+      padding: 10px 22px; border-radius: var(--r);
+      font-size: .78rem; letter-spacing: .05em;
+      transition: transform .28s ease, opacity .28s ease;
+      z-index: 1001; max-width: 90vw; text-align: center;
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+    /* ── Confetti ────────────────────────────────────────────── */
+    #confetti-canvas { position: fixed; inset: 0; pointer-events: none; z-index: 1000; }
+
+    /* ── Archives Vault ─────────────────────────────────────────*/
+    .archives-toggle-row {
+      margin-top: 16px;
+      border-top: 1px solid var(--border);
+      padding-top: 14px;
+    }
+    #archives-toggle-btn {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; width: 100%;
+      background: none; border: 1px solid var(--border);
+      border-radius: var(--r); color: var(--text-dim);
+      cursor: pointer; font-family: var(--mono);
+      font-size: .68rem; letter-spacing: .12em;
+      padding: 7px 14px; text-transform: uppercase;
+      transition: color .2s, border-color .2s, background .2s;
+    }
+    #archives-toggle-btn:hover:not(:disabled) {
+      color: var(--violet); border-color: var(--violet-dim);
+      background: var(--violet-lo);
+    }
+    #archives-toggle-btn:disabled { opacity: .35; cursor: not-allowed; }
+    .archives-chevron { display: inline-block; transition: transform .25s ease; }
+    .archives-chevron.open { transform: rotate(180deg); }
+    #archives-panel { margin-top: 12px; }
+    .archives-meta {
+      display: flex; justify-content: space-between;
+      align-items: center; margin-bottom: 10px;
+    }
+    .archives-label {
+      font-size: .6rem; letter-spacing: .2em;
+      text-transform: uppercase; color: var(--text-dim);
+    }
+    #archives-count { font-size: .6rem; color: var(--violet); letter-spacing: .08em; }
+    .archives-list {
+      display: flex; flex-direction: column; gap: 6px;
+      max-height: 230px; overflow-y: auto; padding-right: 4px;
+    }
+    .archives-empty {
+      color: var(--text-dim); font-size: .74rem;
+      text-align: center; padding: 14px 0; letter-spacing: .06em;
+    }
+    .archive-item {
+      display: flex; flex-direction: column; gap: 3px;
+      padding: 10px 14px;
+      background: rgba(8,10,22,.7);
+      border: 1px solid var(--border);
+      border-radius: var(--r); cursor: pointer; position: relative;
+      transition: border-color .18s, background .18s, box-shadow .18s;
+      animation: fadeUp .22s ease;
+    }
+    .archive-item:hover {
+      border-color: var(--violet-dim); background: var(--violet-lo);
+      box-shadow: 0 0 14px rgba(168,85,247,.09);
+    }
+    .archive-item.active-archive {
+      border-color: var(--violet); background: var(--violet-lo);
+      box-shadow: 0 0 18px rgba(168,85,247,.14);
+    }
+    .archive-item.active-archive::before {
+      content: ""; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; background: var(--violet);
+      border-radius: var(--r) 0 0 var(--r);
+      box-shadow: 0 0 8px var(--violet);
+    }
+    .archive-id {
+      font-size: .56rem; color: var(--text-dim);
+      letter-spacing: .16em; text-transform: uppercase;
+    }
+    .archive-title { font-size: .8rem; color: var(--text); font-weight: bold; line-height: 1.3; }
+    .archive-role  { font-size: .66rem; color: var(--violet); letter-spacing: .04em; }
+    #archive-view-banner {
+      display: none; align-items: center; justify-content: space-between;
+      gap: 10px; padding: 7px 14px;
+      background: var(--violet-lo); border: 1px solid var(--violet-dim);
+      border-radius: var(--r); margin-bottom: 10px;
+      font-size: .68rem; color: var(--violet); letter-spacing: .08em;
+    }
+    #archive-view-banner.visible { display: flex; }
+    #archive-back-btn {
+      background: none; border: 1px solid var(--violet-dim);
+      border-radius: 6px; color: var(--violet); cursor: pointer;
+      font-family: var(--mono); font-size: .62rem;
+      letter-spacing: .1em; padding: 3px 10px;
+      transition: background .2s;
+    }
+    #archive-back-btn:hover { background: rgba(168,85,247,.15); }
+
+    /* ── How to Play ─────────────────────────────────────────── */
+    .howto-title {
+      font-size: 1.1rem; font-weight: bold; letter-spacing: .18em;
+      text-transform: uppercase; margin-bottom: 20px;
+      background: linear-gradient(120deg, var(--gold), var(--violet), var(--pink));
+      background-size: 200% 200%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: logoShimmer 8s ease infinite;
+    }
+    .howto-what {
+      background: rgba(168,85,247,.05);
+      border: 1px solid var(--violet-dim);
+      border-radius: var(--r); padding: 14px 18px;
+      margin-bottom: 22px;
+    }
+    .howto-what-label {
+      font-size: .58rem; letter-spacing: .2em;
+      text-transform: uppercase; color: var(--violet);
+      margin-bottom: 7px;
+    }
+    .howto-what p {
+      font-size: .84rem; color: var(--text); line-height: 1.75;
+    }
+    .howto-steps {
+      display: flex; flex-direction: column; gap: 12px;
+    }
+    .howto-step {
+      display: flex; align-items: flex-start; gap: 18px;
+    }
+    .step-num {
+      font-size: 1.45rem; font-weight: bold; line-height: 1;
+      flex-shrink: 0; width: 38px; text-align: center;
+      background: linear-gradient(135deg, var(--gold), var(--pink));
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      padding-top: 2px;
+    }
+    .step-body { flex: 1; }
+    .step-title {
+      font-size: .78rem; font-weight: bold; letter-spacing: .1em;
+      text-transform: uppercase; color: var(--text);
+      margin-bottom: 3px;
+    }
+    .step-desc {
+      font-size: .8rem; color: var(--text-dim); line-height: 1.7;
+    }
+    .step-desc code {
+      background: var(--violet-lo); border: 1px solid var(--violet-dim);
+      border-radius: 4px; padding: 1px 6px;
+      color: var(--violet); font-family: var(--mono); font-size: .78rem;
+    }
+    .step-kw {
+      color: var(--gold); font-style: italic;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer {
+      position: relative; z-index: 1;
+      width: 100%; max-width: 820px;
+      margin-top: 32px; padding: 22px 0 10px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .footer-powered {
+      font-size: .72rem; letter-spacing: .3em;
+      text-transform: uppercase; font-weight: bold;
+      background: linear-gradient(120deg, var(--violet), var(--pink), var(--gold));
+      background-size: 200% 200%;
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+      animation: logoShimmer 5s ease infinite;
+      filter: drop-shadow(0 0 10px rgba(168,85,247,.35));
+    }
+
+    /* ── Responsive ──────────────────────────────────────────── */
+    @media (max-width: 560px) {
+      .status-board { grid-template-columns: 1fr; }
+      .logo { font-size: 1.2rem; }
+      header { flex-direction: column; align-items: flex-start; }
+      .header-right { align-self: flex-end; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Animated background -->
+  <div class="bg-blob bg-blob-1"></div>
+  <div class="bg-blob bg-blob-2"></div>
+  <div class="bg-blob bg-blob-3"></div>
+  <div class="bg-grid"></div>
+
+  <canvas id="confetti-canvas"></canvas>
+  <div id="toast"></div>
+
+  <header>
+    <div class="brand">
+      <div class="logo">⚿ AI DETECTIVE</div>
+      <div class="tagline">Interrogate · Decode · Claim the Jackpot</div>
+    </div>
+    <div class="header-right">
+      <div class="network-badge">
+        <span class="net-dot"></span>StudioNet
+      </div>
+      <div class="social-links">
+        <a class="social-link" href="https://github.com/moltaphet/ai-detective-game" target="_blank" rel="noopener" aria-label="GitHub">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+        </a>
+        <a class="social-link" href="https://x.com/0xehs4hn" target="_blank" rel="noopener" aria-label="X (Twitter)">
+          <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.742l7.73-8.835L1.254 2.25H8.08l4.253 5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        </a>
+      </div>
+      <button id="wallet-btn">
+        <span class="wallet-dot"></span>
+        <span id="wallet-label">Connect Wallet</span>
+      </button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- Status board -->
+    <div class="status-board">
+      <div class="stat-card">
+        <div class="section-label">Jackpot Pool</div>
+        <div class="stat-value" id="jackpot-display">—</div>
+        <div class="stat-sub">GEN tokens at stake</div>
+      </div>
+      <div class="stat-card">
+        <div class="section-label">Case Status</div>
+        <span id="status-badge" class="status-badge badge-loading">Loading…</span>
+        <div class="stat-sub" id="status-sub">Connect wallet to begin</div>
+      </div>
+    </div>
+
+    <!-- Case Dossier -->
+    <div class="card tilt-card">
+      <div class="dossier-header">
+        <div class="section-label" style="margin:0;">Case Dossier</div>
+        <button id="new-case-btn" disabled>⚡ New Case</button>
+      </div>
+      <div id="no-case-msg" class="no-case-msg">
+        No active case on file.<br>
+        <span style="font-size:.66rem">Connect wallet &amp; generate a case to begin.</span>
+      </div>
+      <div id="case-details" style="display:none">
+        <div class="case-title" id="case-title"></div>
+        <div class="case-description" id="case-description"></div>
+        <div class="suspect-tag">🎭 Suspect on file: <strong id="suspect-role"></strong></div>
+      </div>
+
+      <!-- Archives vault -->
+      <div class="archives-toggle-row">
+        <button id="archives-toggle-btn" disabled>
+          <span>📁 &nbsp;CASE ARCHIVES VAULT</span>
+          <span class="archives-chevron" id="archives-chevron">▾</span>
+        </button>
+      </div>
+      <div id="archives-panel" style="display:none">
+        <div class="archives-meta">
+          <span class="archives-label">Previous Cases</span>
+          <span id="archives-count">—</span>
+        </div>
+        <div id="archives-list" class="archives-list">
+          <div class="archives-empty">No archived cases yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interrogation room -->
+    <div class="card tilt-card">
+      <div class="log-header">
+        <div class="section-label" style="margin:0;">Interrogation Room</div>
+        <button class="btn-ghost" id="refresh-btn">↻ Refresh</button>
+      </div>
+      <div id="archive-view-banner">
+        <span id="archive-view-label">Viewing archived case</span>
+        <button id="archive-back-btn">↩ Back to Active</button>
+      </div>
+      <div id="chat-log">
+        <div class="chat-placeholder">
+          [ Connect your wallet to load interrogation history ]<br>
+          <span style="font-size:.66rem">⚿ &nbsp;The suspect awaits…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input -->
+    <div class="card">
+      <div class="section-label">Your Question to the Suspect</div>
+      <textarea id="question-input"
+        placeholder="e.g. Where were you on the night of the 14th?"
+        maxlength="500" disabled></textarea>
+      <button id="interrogate-btn" disabled>⚿ &nbsp;Interrogate Suspect</button>
+      <div id="tx-bar-wrap">
+        <div id="tx-bar-label">Waiting for AI consensus…</div>
+        <div id="tx-bar-track"><div id="tx-bar-fill"></div></div>
+      </div>
+      <div class="hint-text">Ctrl + Enter to send</div>
+    </div>
+
+    <!-- System Overview & How to Play -->
+    <div class="card">
+      <div class="section-label">System Overview</div>
+      <div class="howto-title">HOW TO PLAY</div>
+
+      <div class="howto-what">
+        <div class="howto-what-label">What is this?</div>
+        <p>An AI-powered blockchain detective game where every crime scenario is dynamically spawned and enforced by intelligent smart contracts on GenLayer. Each interrogation is a real on-chain transaction validated by a decentralized network of AI nodes.</p>
+      </div>
+
+      <div class="howto-steps">
+
+        <div class="howto-step">
+          <div class="step-num">01</div>
+          <div class="step-body">
+            <div class="step-title">Connect Your Wallet</div>
+            <div class="step-desc">Click <strong>Connect Wallet</strong> and approve in MetaMask. Each wallet address maintains its own fully isolated crime vault — no two detectives share history.</div>
+          </div>
+        </div>
+
+        <div class="howto-step">
+          <div class="step-num">02</div>
+          <div class="step-body">
+            <div class="step-title">Review the Case Dossier</div>
+            <div class="step-desc">Read the active <span class="step-kw">Case Dossier</span> to understand the crime scene and the suspect's profile. Past cases are accessible in the <span class="step-kw">Case Archives Vault</span> below the dossier.</div>
+          </div>
+        </div>
+
+        <div class="howto-step">
+          <div class="step-num">03</div>
+          <div class="step-body">
+            <div class="step-title">Interrogate the Suspect</div>
+            <div class="step-desc">Type your question and press <code>Ctrl + Enter</code> (or click <strong>Interrogate Suspect</strong>). Each question is broadcast as a blockchain transaction — no shortcuts, no simulation.</div>
+          </div>
+        </div>
+
+        <div class="howto-step">
+          <div class="step-num">04</div>
+          <div class="step-body">
+            <div class="step-title">Wait for AI Consensus</div>
+            <div class="step-desc">The decentralized AI validator network analyzes your prompt and reaches consensus on the suspect's testimony. This typically takes 2–5 minutes on StudioNet.</div>
+          </div>
+        </div>
+
+        <div class="howto-step">
+          <div class="step-num">05</div>
+          <div class="step-body">
+            <div class="step-title">Crack the Case</div>
+            <div class="step-desc">Study the suspect's responses for slips and contradictions. Uncover the hidden <span class="step-kw">Secret Word</span> buried in the evidence trail to solve the case and claim the jackpot.</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <footer>
+    <div class="footer-powered">⚡ &nbsp;Powered by GenLayer &nbsp;⚡</div>
+  </footer>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
